@@ -1,1 +1,1 @@
-vastai
+vast-sdk

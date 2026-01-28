@@ -42,9 +42,9 @@ for i in {1..120}; do
     sleep 2
 done
 
-# Install PyWorker requirements
+# Install PyWorker requirements (vast-sdk for Worker/WorkerConfig)
 echo "Installing PyWorker requirements..."
-pip install -q vastai
+pip install -q vast-sdk
 
 # Start the PyWorker (from the same directory as start.sh)
 echo "Starting PyWorker..."
