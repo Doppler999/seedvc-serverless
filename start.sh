@@ -42,7 +42,12 @@ for i in {1..120}; do
     sleep 2
 done
 
-# Start the PyWorker
+# Install PyWorker requirements
+echo "Installing PyWorker requirements..."
+pip install -q vastai
+
+# Start the PyWorker (from the same directory as start.sh)
 echo "Starting PyWorker..."
-cd /workspace/pyworker
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
 python3 worker.py
