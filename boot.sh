@@ -23,6 +23,8 @@ WORK=/workspace
 LOG_DIR=/var/log/seedvc
 
 mkdir -p "$LOG_DIR" "$WORK"
+# Keep everything on stdout (instance log) and in a file a later SSH can read.
+exec > >(tee -a "$LOG_DIR/boot.log") 2>&1
 cd "$WORK"
 
 echo "=== [1/7] system packages ==="
@@ -42,17 +44,17 @@ fi
 cd "$WORK/seed-vc"
 
 echo "=== [3/7] torch 2.1.0 + torchaudio 2.1.0 (cu121) ==="
-python -m pip install -q --no-cache-dir "torch==2.1.0" "torchaudio==2.1.0" \
+python3 -m pip install -q --no-cache-dir "torch==2.1.0" "torchaudio==2.1.0" \
   --index-url https://download.pytorch.org/whl/cu121 || exit 12
 
 echo "=== [4/7] python deps ==="
-python -m pip install -q --no-cache-dir \
+python3 -m pip install -q --no-cache-dir \
   "numpy==1.26.4" "scipy==1.13.1" "librosa==0.10.2" "pydub==0.25.1" \
   "soundfile==0.12.1" "hydra-core==1.3.2" "omegaconf==2.3.1" \
   "pyyaml==6.0.2" "einops==0.8.0" "munch==4.0.0" "transformers==4.46.3" \
   "huggingface-hub==0.28.1" "tqdm" "matplotlib" \
   "fastapi" "uvicorn" "python-multipart" || exit 13
-python -c "import torch, torchaudio; print('torch', torch.__version__, 'cuda_ok', torch.cuda.is_available(), 'torchaudio', torchaudio.__version__)" || exit 14
+python3 -c "import torch, torchaudio; print('torch', torch.__version__, 'cuda_ok', torch.cuda.is_available(), 'torchaudio', torchaudio.__version__)" || exit 14
 
 echo "=== [5/7] api_server.py + worker.py from $RAW ==="
 curl -fsSL "$RAW/api_server.py" -o "$WORK/seed-vc/api_server.py" || exit 15
@@ -86,5 +88,5 @@ echo
 echo "=== [7/7] PyWorker ==="
 mkdir -p "$WORK/pyworker"
 cd "$WORK/pyworker"
-python -m pip install -q --no-cache-dir "vastai-sdk @ git+https://github.com/vast-ai/vast-sdk.git" || exit 19
+python3 -m pip install -q --no-cache-dir "vastai-sdk @ git+https://github.com/vast-ai/vast-sdk.git" || exit 19
 exec python3 "$WORK/worker.py"
