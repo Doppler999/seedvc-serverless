@@ -35,7 +35,6 @@ worker_config = WorkerConfig(
                 generator=lambda: {},  # Empty for non-LLM
                 runs=1,
                 concurrency=1,
-                do_warmup_benchmark=False,
             ),
         ),
     ],
