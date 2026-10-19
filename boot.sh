@@ -29,7 +29,7 @@ cd "$WORK"
 
 echo "=== [1/7] system packages ==="
 apt-get update -qq
-apt-get install -y -qq --no-install-recommends git ffmpeg libsndfile1 curl ca-certificates
+apt-get install -y -qq --no-install-recommends git ffmpeg libsndfile1 curl ca-certificates openssl
 
 echo "=== [2/7] seed-vc @ ${SEED_VC_COMMIT} ==="
 if [ ! -f "$WORK/seed-vc/modules/v2/vc_wrapper.py" ]; then
@@ -57,8 +57,8 @@ python3 -m pip install -q --no-cache-dir \
 python3 -c "import torch, torchaudio; print('torch', torch.__version__, 'cuda_ok', torch.cuda.is_available(), 'torchaudio', torchaudio.__version__)" || exit 14
 
 echo "=== [5/7] api_server.py + worker.py from $RAW ==="
-curl -fsSL "$RAW/api_server.py?v=json1" -o "$WORK/seed-vc/api_server.py" || exit 15
-curl -fsSL "$RAW/worker.py?v=bench2" -o "$WORK/worker.py" || exit 15
+curl -fsSL "$RAW/api_server.py?v=json2" -o "$WORK/seed-vc/api_server.py" || exit 15
+curl -fsSL "$RAW/worker.py?v=bench3" -o "$WORK/worker.py" || exit 15
 grep -q source_audio_b64 "$WORK/seed-vc/api_server.py" || { echo "FATAL: api_server.py from main has no JSON support"; exit 16; }
 wc -l "$WORK/seed-vc/api_server.py" "$WORK/worker.py"
 
