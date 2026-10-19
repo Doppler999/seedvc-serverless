@@ -20,17 +20,23 @@ worker_config = WorkerConfig(
             allow_parallel_requests=False,  # SeedVC processes one at a time
             max_queue_time=300.0,  # 5 minutes max wait
             workload_calculator=lambda payload: 100.0,  # Fixed cost per request
-            benchmark_config=BenchmarkConfig(
-                generator=lambda: {},  # Empty for non-LLM
-                runs=1,
-                concurrency=1,
-            ),
         ),
+        # The autoscaler runs the benchmark on whichever handler carries the
+        # BenchmarkConfig and kills the worker when every benchmark response is
+        # non-200 ("No successful responses from benchmark"). A benchmark on
+        # /convert used to POST {} and got a 422, so it must live on /health:
+        # any body gets 200 here, and the model is already loaded by then.
         HandlerConfig(
             route="/health",
             allow_parallel_requests=True,
             max_queue_time=10.0,
             workload_calculator=lambda payload: 1.0,
+            benchmark_config=BenchmarkConfig(
+                generator=lambda: {},  # Empty for non-LLM
+                runs=1,
+                concurrency=1,
+                do_warmup_benchmark=False,
+            ),
         ),
     ],
     log_action_config=LogActionConfig(
