@@ -96,7 +96,8 @@ echo "=== [7/7] PyWorker ==="
 # it, so reproduce the three env vars + the cert it needs (VaST docs convention).
 export WORKER_PORT="${WORKER_PORT:-3000}"
 export USE_SSL="${USE_SSL:-true}"
-export UNSECURED="${UNSECURED:-}"
+# Empty UNSECURED breaks the SDK's strtobool; leave it unset instead.
+if [ -z "${UNSECURED:-}" ]; then unset UNSECURED; fi
 export REPORT_ADDR="${REPORT_ADDR:-https://run.vast.ai}"
 echo "WORKER_PORT=$WORKER_PORT USE_SSL=$USE_SSL REPORT_ADDR=$REPORT_ADDR CONTAINER_ID=${CONTAINER_ID:-unset}"
 
