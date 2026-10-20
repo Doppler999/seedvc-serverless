@@ -1,1 +1,27 @@
+# Python deps baked into the SeedVC serverless image.
+# torch/torchaudio are installed separately from the cu121 wheel index (see
+# Dockerfile) because PyPI has no CUDA build of them.
+#
+# descript-audio-codec provides `dac.nn.quantize`, imported by
+# modules/length_regulator.py which V1's DiT build path pulls in. V2 uses its
+# own modules/v2/length_regulator.py.
+numpy==1.26.4
+scipy==1.13.1
+librosa==0.10.2
+pydub==0.25.1
+soundfile==0.12.1
+hydra-core==1.3.2
+omegaconf==2.3.1
+pyyaml==6.0.2
+einops==0.8.0
+munch==4.0.0
+transformers==4.46.3
+huggingface-hub==0.28.1
+descript-audio-codec==1.0.0
+tqdm
+matplotlib
+fastapi
+uvicorn
+python-multipart
+# PyWorker runtime (imported by worker.py)
 git+https://github.com/vast-ai/vast-sdk.git

@@ -6,8 +6,9 @@ verifies the SHA-256 of every large (LFS) file. Large artifacts land in the
 repo-local HF cache (/workspace/seed-vc/checkpoints) exactly where
 hf_utils.load_custom_model_from_hf looks for them; the rest land in $HF_HOME.
 
-V1 (~1.9 GB): the 22.05 kHz base DiT, the 44.1 kHz f0-conditioned DiT used by
-`f0_conditioned=true`, both corresponding BigVGAN vocoders and RMVPE.
+V1 (~3.4 GB): the 22.05 kHz base DiT, the 44.1 kHz f0-conditioned DiT used by
+`f0_conditioned=true`, both corresponding BigVGAN vocoders, RMVPE and the
+whisper-small weights V1's own WhisperModel needs.
 
 The runtime image is built with HF_HUB_OFFLINE=1 / TRANSFORMERS_OFFLINE=1, so a
 missing artifact fails loudly at boot instead of being downloaded silently.
@@ -52,7 +53,12 @@ V2_ARTIFACTS = [
     ("facebook/hubert-large-ll60k", "ff022d095678a2995f3c49bab18a96a9e553f782", "config.json", None),
     ("facebook/hubert-large-ll60k", "ff022d095678a2995f3c49bab18a96a9e553f782",
      "preprocessor_config.json", None),
-    # whisper-small tokenizer (text side of the content extractor)
+    # whisper-small: tokenizer for V2's content extractor AND the full model for
+    # V1, which does WhisperModel.from_pretrained("openai/whisper-small") inside
+    # _load_base_model. Without model.safetensors the V1 warm-up fails offline.
+    ("openai/whisper-small", "973afd24965f72e36ca33b3055d56a652f456b4d", "model.safetensors",
+     "1d7734884874f1a1513ed9aa760a4f8e97aaa02fd6d93a3a85d27b2ae9ca596b"),
+    ("openai/whisper-small", "973afd24965f72e36ca33b3055d56a652f456b4d", "generation_config.json", None),
     ("openai/whisper-small", "973afd24965f72e36ca33b3055d56a652f456b4d", "tokenizer.json", None),
     ("openai/whisper-small", "973afd24965f72e36ca33b3055d56a652f456b4d", "tokenizer_config.json", None),
     ("openai/whisper-small", "973afd24965f72e36ca33b3055d56a652f456b4d", "vocab.json", None),
@@ -102,6 +108,31 @@ def sha256(path):
         for chunk in iter(lambda: f.read(8 * 1024 * 1024), b""):
             h.update(chunk)
     return h.hexdigest()
+
+
+def pin_refs():
+    """Pin refs/main -> the baked revision for every repo in each cache.
+
+    hf_hub_download(revision=<sha>) leaves refs/main unwritten, and offline
+    resolution then falls back to "whichever snapshot exists". Writing the ref
+    makes the offline lookup deterministic (and still correct: the sha we baked
+    is what main resolved to at build time).
+    """
+    from huggingface_hub import constants
+
+    hub_dir = constants.HF_HUB_CACHE
+    seen = set()
+    for repo_id, revision, _filename, _expected in ARTIFACTS:
+        cache_dir = CHECKPOINT_DIR if repo_id.startswith(REPO_LOCAL_CACHE_PREFIXES) else hub_dir
+        key = (cache_dir, repo_id)
+        if key in seen:
+            continue
+        seen.add(key)
+        refs = os.path.join(cache_dir, "models--" + repo_id.replace("/", "--"), "refs")
+        os.makedirs(refs, exist_ok=True)
+        with open(os.path.join(refs, "main"), "w") as f:
+            f.write(revision)
+    print(f"[ok] pinned refs/main for {len(seen)} repos", flush=True)
 
 
 def download_all():
@@ -162,6 +193,7 @@ if __name__ == "__main__":
                     help="instantiate the V2 and V1 wrappers from the baked cache after downloading")
     args = ap.parse_args()
     download_all()
+    pin_refs()
     if args.verify_load:
         os.environ.setdefault("HF_HUB_OFFLINE", "1")
         os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")

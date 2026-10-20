@@ -1,39 +1,108 @@
 # SeedVC Serverless
 
-Docker image for Seed-VC voice conversion API, optimized for Vast.ai Serverless.
+Baked Docker image for the Seed-VC voice-conversion API (scale-to-zero on
+Vast.ai serverless). Nothing is installed or downloaded at boot: a cold worker
+starts `api_server.py`, waits for `/health` and runs the PyWorker.
 
-## Features
+## Why it is baked
 
-- FastAPI server with `/convert` and `/health` endpoints
-- Pre-installed Seed-VC V2 model
-- CUDA-enabled for GPU acceleration
+`boot.sh` (still in this repo as the rollback path) installed torch + pip deps,
+cloned seed-vc and pulled ~6.5 GB of weights on every fresh host. That takes
+5-7 minutes on a Vast host — longer than the autoscaler's ~470 s load window, so
+every worker was killed mid-boot and replaced, burning credit without ever
+serving a request. With the image baked, a cold worker pays only the image pull
+and a ~15 s checkpoint load.
 
-## Usage
+## What the image contains
 
-```bash
-docker pull ghcr.io/doppler999/seedvc-serverless:latest
-docker run -p 8080:8080 --gpus all ghcr.io/doppler999/seedvc-serverless:latest
+- seed-vc pinned at `51383efd921027683c89e5348211d93ff12ac2a8` (no `.git` layer)
+- CUDA 12.1 runtime base (Ubuntu 22.04, python3.10) + torch/torchaudio 2.4.0
+  cu121. The base is deliberately the plain `runtime` flavour: torch's cu121
+  wheel ships cuDNN 8.9 and cuBLAS itself, so `-cudnn8` would only add ~2 GB to
+  the layer every cold start has to pull.
+- the dep set from `requirements.txt`, including `descript-audio-codec==1.0.0`
+  (V1's DiT build imports `dac.nn.quantize`) and the Vast PyWorker SDK
+- every weight, checksum-pinned at build time by `prefetch_weights.py`:
+  - V2 (quality): `v2/cfm_small.pth`, `v2/ar_base.pth`, ASTRAL
+    `bsq32_light.pth` + `bsq2048_light.pth`, campplus, BigVGAN 22 kHz,
+    hubert-large-ll60k, whisper-small tokenizer
+  - V1 (fast): the 22.05 kHz base DiT, the 44.1 kHz f0 DiT, both BigVGAN
+    vocoders (22 + 44 kHz), RMVPE and the whisper-small weights its
+    `WhisperModel.from_pretrained` needs
+- runtime runs with `HF_HUB_OFFLINE=1` / `TRANSFORMERS_OFFLINE=1`: a missing
+  artifact fails at `docker build` (see `verify_image.py`) instead of on a cold
+  user
+
+`verify_image.py` runs inside the build and fails it unless every artifact
+resolves offline and both engines (V1 + V2) load from the baked cache on CPU.
+
+## Build
+
+CI builds and pushes on every push to `main` (`.github/workflows/image.yml`):
+
+```
+ghcr.io/doppler999/seedvc-serverless:latest   # + :<git sha>
 ```
 
-## API Endpoints
+Locally:
 
-### Health Check
+```bash
+docker build -t seedvc-serverless .
+docker run --gpus all -p 8080:8080 seedvc-serverless
+```
+
+### Pull requirement
+
+The Vast workergroup pulls this image **anonymously** — the GHCR package must be
+public (Package settings → Change visibility → Public). If it is private, Vast
+fails the worker with an image-pull error; there is no registry credential in
+the workergroup launch args.
+
+## Runtime
+
+`onstart.sh` is the entrypoint (also used as `--onstart-cmd`):
+
+1. `WORKER_PORT` / `USE_SSL` / `REPORT_ADDR` exported (same defaults as boot.sh)
+2. `api_server.py` on `8080`, then wait for `/health` (logs
+   `MODEL_SERVER_READY_SECONDS`)
+3. request the instance TLS cert from `console.vast.ai` if `/etc/instance.crt`
+   is missing
+4. `exec worker.py` — the Vast PyWorker on `WORKER_PORT`
+
+Vast workergroup launch args:
+
+```
+--image ghcr.io/doppler999/seedvc-serverless:latest --disk 40 \
+  --onstart-cmd "bash /workspace/seed-vc/onstart.sh"
+```
+
+## API
+
+### Health check
 ```
 GET /health
 ```
+`/health` only answers after FastAPI's startup hook has loaded the models.
 
-### Voice Conversion
+### Voice conversion
 ```
 POST /convert
-Content-Type: multipart/form-data
-
-- source_audio: Audio file (wav)
-- target_audio: Target voice audio file (wav)
-- diffusion_steps: int (default: 30)
-- length_adjust: float (default: 1.0)
-- convert_style: bool (default: true)
 ```
 
-## Building
+- JSON (`application/json`) — the PyWorker path:
+  `{"source_audio_b64": "...", "target_audio_b64": "...", "mode": "fast"|"quality",
+    "diffusion_steps": 10, "length_adjust": 1.0, "convert_style": false,
+    "f0_conditioned": false}` → `{"audio": "<base64 wav>", "duration_s": ...,
+    "sample_rate": ..., "mode": ...}`
+- multipart (`multipart/form-data`) — app/browser path:
+  `source_audio`, `target_audio` files + the same scalar fields, returns
+  `audio/wav`
 
-The image is automatically built and pushed to GitHub Container Registry on every push to main.
+`mode=fast` is Seed-VC V1 (22.05 kHz, 44.1 kHz with `f0_conditioned=true`),
+`mode=quality` is Seed-VC V2 (22.05 kHz). Output is peak-trimmed to -0.3 dBFS
+when it comes out hot; clean output is returned untouched.
+
+## Contract note
+
+This server has **no auth**. Put it behind a token-checking proxy / the
+serverless provider's endpoint auth; never expose it raw.
