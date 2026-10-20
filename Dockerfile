@@ -78,6 +78,8 @@ RUN python3 -m pip install --no-deps \
 # Downloads into the exact cache layout the runtime looks at (repo-local
 # ./checkpoints for hf_utils, $HF_HOME/hub for transformers/bigvgan), pins each
 # HF repo to an immutable revision and verifies the SHA-256 of every large file.
+# The app sources come first so verify_image.py can import api_server/worker.
+COPY api_server.py worker.py onstart.sh /workspace/seed-vc/
 COPY prefetch_weights.py verify_image.py /opt/seedvc/
 RUN python3 /opt/seedvc/prefetch_weights.py \
     && du -sh /workspace/seed-vc/checkpoints /opt/hf-cache
