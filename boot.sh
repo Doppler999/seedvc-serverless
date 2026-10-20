@@ -44,7 +44,7 @@ fi
 cd "$WORK/seed-vc"
 
 echo "=== [2b/7] prefetch weights in the background (overlaps the pip install) ==="
-curl -fsSL "$RAW/prefetch_weights.py?v=pre1" -o "$WORK/seed-vc/prefetch_weights.py" || exit 15
+curl -fsSL "$RAW/prefetch_weights.py?v=v1a" -o "$WORK/seed-vc/prefetch_weights.py" || exit 15
 python3 -m pip install -q --no-cache-dir "huggingface-hub==0.28.1" || exit 13
 nohup python3 "$WORK/seed-vc/prefetch_weights.py" > "$LOG_DIR/prefetch.log" 2>&1 &
 PREFETCH_PID=$!
@@ -55,18 +55,23 @@ python3 -m pip install -q --no-cache-dir "torch==2.4.0" "torchaudio==2.4.0" \
   --index-url https://download.pytorch.org/whl/cu121 || exit 12
 
 echo "=== [4/7] python deps ==="
+# descript-audio-codec provides `dac.nn.quantize`, imported by
+# modules/length_regulator.py, which V1's DiT build path pulls in. V2 uses its
+# own modules/v2/length_regulator.py and never imported it, hence the new pin.
 python3 -m pip install -q --no-cache-dir \
   "numpy==1.26.4" "scipy==1.13.1" "librosa==0.10.2" "pydub==0.25.1" \
   "soundfile==0.12.1" "hydra-core==1.3.2" "omegaconf==2.3.1" \
   "pyyaml==6.0.2" "einops==0.8.0" "munch==4.0.0" "transformers==4.46.3" \
-  "huggingface-hub==0.28.1" "tqdm" "matplotlib" \
+  "huggingface-hub==0.28.1" "descript-audio-codec==1.0.0" "tqdm" "matplotlib" \
   "fastapi" "uvicorn" "python-multipart" || exit 13
 python3 -c "import torch, torchaudio; print('torch', torch.__version__, 'cuda_ok', torch.cuda.is_available(), 'torchaudio', torchaudio.__version__)" || exit 14
+python3 -c "from dac.nn.quantize import VectorQuantize; print('dac import ok')" || exit 14
 
 echo "=== [5/7] api_server.py + worker.py from $RAW ==="
-curl -fsSL "$RAW/api_server.py?v=json2" -o "$WORK/seed-vc/api_server.py" || exit 15
-curl -fsSL "$RAW/worker.py?v=bench4" -o "$WORK/worker.py" || exit 15
+curl -fsSL "$RAW/api_server.py?v=v1a" -o "$WORK/seed-vc/api_server.py" || exit 15
+curl -fsSL "$RAW/worker.py?v=v1a" -o "$WORK/worker.py" || exit 15
 grep -q source_audio_b64 "$WORK/seed-vc/api_server.py" || { echo "FATAL: api_server.py from main has no JSON support"; exit 16; }
+grep -q "def run_v1" "$WORK/seed-vc/api_server.py" || { echo "FATAL: api_server.py from main has no V1 engine"; exit 16; }
 wc -l "$WORK/seed-vc/api_server.py" "$WORK/worker.py"
 
 echo "=== [6/7] start model server (weights download on first boot) ==="

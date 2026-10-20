@@ -1,10 +1,13 @@
 """Build-time weight bake for the SeedVC serverless image.
 
-Downloads every artifact the Seed-VC V2 engine needs when it loads, pins each
-Hugging Face repo to an immutable revision, and verifies the SHA-256 of every
-large (LFS) file. Large artifacts land in the repo-local HF cache
-(/workspace/seed-vc/checkpoints) exactly where hf_utils.load_custom_model_from_hf
-looks for them; the rest land in $HF_HOME.
+Downloads every artifact the Seed-VC V2 (quality) and V1 (fast) engines need
+when they load, pins each Hugging Face repo to an immutable revision, and
+verifies the SHA-256 of every large (LFS) file. Large artifacts land in the
+repo-local HF cache (/workspace/seed-vc/checkpoints) exactly where
+hf_utils.load_custom_model_from_hf looks for them; the rest land in $HF_HOME.
+
+V1 (~1.9 GB): the 22.05 kHz base DiT, the 44.1 kHz f0-conditioned DiT used by
+`f0_conditioned=true`, both corresponding BigVGAN vocoders and RMVPE.
 
 The runtime image is built with HF_HUB_OFFLINE=1 / TRANSFORMERS_OFFLINE=1, so a
 missing artifact fails loudly at boot instead of being downloaded silently.
@@ -23,7 +26,7 @@ CHECKPOINT_DIR = os.path.join(SEED_VC_DIR, "checkpoints")
 
 # (repo_id, revision, filename, sha256 or None)
 # LFS blobs: sha256 == the HF blob id, so these double as integrity pins.
-ARTIFACTS = [
+V2_ARTIFACTS = [
     # V2 CFM + AR checkpoints (the 856 MB the engine loads)
     ("Plachta/Seed-VC", "257283f9f41585055e8f858fba4fd044e5caed6e", "v2/cfm_small.pth",
      "73ae18615dc8cb01710086629973198226dedc63ebeaab0aee17863d767b3474"),
@@ -60,6 +63,38 @@ ARTIFACTS = [
     ("openai/whisper-small", "973afd24965f72e36ca33b3055d56a652f456b4d", "config.json", None),
 ]
 
+# V1 (fast) artifacts, read straight out of seed_vc_wrapper.py at the pinned
+# commit: Plachta/Seed-VC DiT checkpoints + configs, RMVPE, 44.1 kHz BigVGAN.
+V1_ARTIFACTS = [
+    # base (speech) DiT, 22.05 kHz
+    ("Plachta/Seed-VC", "257283f9f41585055e8f858fba4fd044e5caed6e",
+     "DiT_seed_v2_uvit_whisper_small_wavenet_bigvgan_pruned.pth",
+     "8ec8841b20bb46df9f7e8e570a6946a4b87b940133c7f0e778487ff33841f720"),
+    ("Plachta/Seed-VC", "257283f9f41585055e8f858fba4fd044e5caed6e",
+     "config_dit_mel_seed_uvit_whisper_small_wavenet.yml", None),
+    # f0-conditioned (singing) DiT, 44.1 kHz
+    ("Plachta/Seed-VC", "257283f9f41585055e8f858fba4fd044e5caed6e",
+     "DiT_seed_v2_uvit_whisper_base_f0_44k_bigvgan_pruned_ft_ema.pth",
+     "883d19be9fe9c4bb2dce30d545cd77e5ed2b6326c7ed1c4d9a7ce8e555b163f9"),
+    ("Plachta/Seed-VC", "257283f9f41585055e8f858fba4fd044e5caed6e",
+     "config_dit_mel_seed_uvit_whisper_base_f0_44k.yml", None),
+    # F0 extractor for the f0-conditioned path
+    ("lj1995/VoiceConversionWebUI", "e6d0c1a17da07c33557852f9dfa2bd44cc75737d", "rmvpe.pt",
+     "6d62215f4306e3ca278246188607209f09af3dc77ed4232efdd069798c4ec193"),
+    # 44.1 kHz vocoder (V1 f0 path)
+    ("nvidia/bigvgan_v2_44khz_128band_512x", "95a9d1dcb12906c03edd938d77b9333d6ded7dfb",
+     "bigvgan_generator.pt",
+     "d9fe7ec6bd0b44ed9d66973d5012d8181c1570b01e5c72df51973e241dccd357"),
+    ("nvidia/bigvgan_v2_44khz_128band_512x", "95a9d1dcb12906c03edd938d77b9333d6ded7dfb",
+     "config.json", None),
+]
+
+# hf_utils.load_custom_model_from_hf() always caches under ./checkpoints, so
+# every repo it resolves has to be baked there (not in $HF_HOME).
+REPO_LOCAL_CACHE_PREFIXES = ("Plachta/", "funasr/", "lj1995/")
+
+ARTIFACTS = V2_ARTIFACTS + V1_ARTIFACTS
+
 
 def sha256(path):
     h = hashlib.sha256()
@@ -73,7 +108,7 @@ def download_all():
     os.makedirs(CHECKPOINT_DIR, exist_ok=True)
     total = 0
     for repo_id, revision, filename, expected in ARTIFACTS:
-        cache_dir = CHECKPOINT_DIR if repo_id.startswith(("Plachta/", "funasr/")) else None
+        cache_dir = CHECKPOINT_DIR if repo_id.startswith(REPO_LOCAL_CACHE_PREFIXES) else None
         path = hf_hub_download(
             repo_id=repo_id,
             filename=filename,
@@ -105,15 +140,26 @@ def verify_load():
     wrapper = instantiate(cfg)
     wrapper.load_checkpoints()
     n_params = sum(p.numel() for p in wrapper.parameters())
-    print(f"[ok] wrapper instantiated and checkpoints loaded, {n_params / 1e6:.1f} M params", flush=True)
+    print(f"[ok] V2 wrapper instantiated and checkpoints loaded, {n_params / 1e6:.1f} M params", flush=True)
     del wrapper
     torch.cuda.empty_cache() if torch.cuda.is_available() else None
+
+    # V1 (fast): both DiTs, both vocoders, CAMPPlus and RMVPE load in __init__.
+    from seed_vc_wrapper import SeedVCWrapper
+
+    v1 = SeedVCWrapper(device=torch.device("cpu"))
+    print(
+        f"[ok] V1 wrapper loaded on cpu: sr_base={v1.sr} sr_f0={v1.sr_f0} "
+        f"has_model_f0={v1.model_f0 is not None}",
+        flush=True,
+    )
+    del v1
 
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--verify-load", action="store_true",
-                    help="instantiate the V2 wrapper from the baked cache after downloading")
+                    help="instantiate the V2 and V1 wrappers from the baked cache after downloading")
     args = ap.parse_args()
     download_all()
     if args.verify_load:
