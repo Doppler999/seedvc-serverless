@@ -36,6 +36,34 @@ and a ~15 s checkpoint load.
 `verify_image.py` runs inside the build and fails it unless every artifact
 resolves offline and both engines (V1 + V2) load from the baked cache on CPU.
 
+## Measured (2026-10-20, digest `sha256:3186c52a…`)
+
+- image: 9.13 GB compressed / 22 layers; weights 5.2 GB (2.2 GB repo-local
+  checkpoints + 3.0 GB HF cache)
+- container start → worker ready (image already on the host): **14-20 s**
+  (`loadtime` reported by the PyWorker; model server healthy after 15-16 s)
+- first pull on a virgin host: **114 s** (RTX PRO 5000) to **542 s** (slow
+  RTX 4090) — the pull, not the boot, is what a cold request waits for
+- app route (`/api/audio/voice-change-seedvc`, 1 s wav): 200 in **8.4-8.6 s**
+  (fast and quality, warm worker on a 5 Gbps host), 50.5 s when the worker has
+  to restart from the exited state, and a `VOICE_ENGINE_WARMING` 503 when the
+  request lands on a host that still has to pull the image (>240 s)
+
+### GPU constraint (important)
+
+torch 2.4.0+cu121 ships kernels up to `sm_90`. On Blackwell (`sm_120`: RTX PRO
+5000/6000, RTX 50xx, B200) every kernel launch fails with "no kernel image is
+available for execution on the device", the PyWorker's benchmark gets a 500 and
+the autoscaler kills the worker — exactly the churn this image is meant to stop.
+The workergroup search therefore pins pre-Blackwell GPUs, and also requires
+`inet_down>=2000` so a virgin pull is not minutes long:
+
+```
+gpu_ram>=16 num_gpus=1 rentable=true verified=true rented=false inet_down>=2000
+gpu_name in [RTX_4090,L40,L40S,A100,RTX_A6000,RTX_3090,RTX_6000Ada,H100]
+```
+
+
 ## Build
 
 CI builds and pushes on every push to `main` (`.github/workflows/image.yml`):
