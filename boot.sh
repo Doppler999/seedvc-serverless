@@ -43,8 +43,8 @@ if [ ! -f "$WORK/seed-vc/modules/v2/vc_wrapper.py" ]; then
 fi
 cd "$WORK/seed-vc"
 
-echo "=== [3/7] torch 2.1.0 + torchaudio 2.1.0 (cu121) ==="
-python3 -m pip install -q --no-cache-dir "torch==2.1.0" "torchaudio==2.1.0" \
+echo "=== [3/7] torch 2.4.0 + torchaudio 2.4.0 (cu121) ==="
+python3 -m pip install -q --no-cache-dir "torch==2.4.0" "torchaudio==2.4.0" \
   --index-url https://download.pytorch.org/whl/cu121 || exit 12
 
 echo "=== [4/7] python deps ==="
