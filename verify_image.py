@@ -76,6 +76,7 @@ def check_imports():
     import torchaudio  # noqa: F401
     import transformers  # noqa: F401
     import vastai  # noqa: F401
+    from vastai import Worker, WorkerConfig  # noqa: F401
 
     log(f"imports ok: dac, fastapi, hydra, librosa, soundfile, "
         f"torchaudio {torchaudio.__version__}, transformers {transformers.__version__}, vastai")
@@ -159,6 +160,21 @@ def check_api_server():
     log(f"api_server routes ok: {sorted(str(p) for p in routes if p)}")
 
 
+def check_worker():
+    """worker.py must import and build its WorkerConfig against this SDK."""
+    os.chdir(SEED_VC_DIR)
+    import worker
+
+    routes = [h.route for h in worker.worker_config.handlers]
+    for route in ("/convert", "/health"):
+        if route not in routes:
+            fail(f"worker.py handlers missing {route} (has {routes})")
+    payload = worker.worker_config.handlers[0].benchmark_config.generator()
+    if not payload.get("source_audio_b64") or not payload.get("target_audio_b64"):
+        fail("worker.py benchmark payload has no audio")
+    log(f"worker.py ok: handlers {routes}, benchmark payload {len(payload['source_audio_b64'])} b64 chars")
+
+
 if __name__ == "__main__":
     check_torch_libs()
     check_imports()
@@ -166,4 +182,5 @@ if __name__ == "__main__":
     check_v2()
     check_v1()
     check_api_server()
+    check_worker()
     log("image verified: both engines load from the baked weights with no network")

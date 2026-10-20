@@ -20,8 +20,8 @@ huggingface-hub==0.28.1
 descript-audio-codec==1.0.0
 tqdm
 matplotlib
-fastapi
-uvicorn
+# fastapi/uvicorn are bounded the way the PyWorker SDK bounds them, so the
+# worker's own server and api_server share one version.
+fastapi>=0.110,<1.0
+uvicorn>=0.24,<0.32
 python-multipart
-# PyWorker runtime (imported by worker.py)
-git+https://github.com/vast-ai/vast-sdk.git

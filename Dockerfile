@@ -60,9 +60,19 @@ RUN python3 -m pip install --upgrade pip setuptools wheel \
     && python3 -c "import torch, torchaudio; print('torch', torch.__version__, 'cuda', torch.version.cuda, 'torchaudio', torchaudio.__version__)"
 
 # ── the rest of the python deps (single source of truth: requirements.txt) ───
-COPY requirements.txt /opt/seedvc/requirements.txt
+COPY requirements.txt requirements-pyworker.txt /opt/seedvc/
 RUN python3 -m pip install -r /opt/seedvc/requirements.txt \
-    && python3 -c "from dac.nn.quantize import VectorQuantize; import hydra, librosa, fastapi, vastai; print('deps ok')"
+    && python3 -c "from dac.nn.quantize import VectorQuantize; import hydra, librosa, fastapi; print('deps ok')"
+
+# ── Vast PyWorker SDK, pinned, without its transformers~=4.52 extra ──────────
+# The SDK's pyproject pins transformers~=4.52 which conflicts with seed-vc's
+# 4.46.3; the Worker code never imports transformers, borb or nltk, so install
+# --no-deps and add the modules it really imports (requirements-pyworker.txt).
+ARG VASTAI_SDK_COMMIT=1c39c42
+RUN python3 -m pip install --no-deps \
+        "vastai-sdk @ git+https://github.com/vast-ai/vast-sdk.git@${VASTAI_SDK_COMMIT}" \
+    && python3 -m pip install -r /opt/seedvc/requirements-pyworker.txt \
+    && python3 -c "from vastai import Worker, WorkerConfig, HandlerConfig, BenchmarkConfig, LogActionConfig; print('vastai sdk ok')"
 
 # ── bake every weight: V1 + V2 + the HF caches the wrappers read ─────────────
 # Downloads into the exact cache layout the runtime looks at (repo-local
