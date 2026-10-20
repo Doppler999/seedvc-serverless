@@ -59,6 +59,8 @@ V2_ARTIFACTS = [
     ("openai/whisper-small", "973afd24965f72e36ca33b3055d56a652f456b4d", "model.safetensors",
      "1d7734884874f1a1513ed9aa760a4f8e97aaa02fd6d93a3a85d27b2ae9ca596b"),
     ("openai/whisper-small", "973afd24965f72e36ca33b3055d56a652f456b4d", "generation_config.json", None),
+    # AutoFeatureExtractor.from_pretrained("openai/whisper-small") in V1 reads this
+    ("openai/whisper-small", "973afd24965f72e36ca33b3055d56a652f456b4d", "preprocessor_config.json", None),
     ("openai/whisper-small", "973afd24965f72e36ca33b3055d56a652f456b4d", "tokenizer.json", None),
     ("openai/whisper-small", "973afd24965f72e36ca33b3055d56a652f456b4d", "tokenizer_config.json", None),
     ("openai/whisper-small", "973afd24965f72e36ca33b3055d56a652f456b4d", "vocab.json", None),

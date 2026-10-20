@@ -7,10 +7,16 @@
 # transformer/PDF extras are dead weight here. This list is the SDK's real
 # import set plus its own version bounds.
 aiohttp>=3.9.1,<3.13.4
+aiodns>=3.6.0
 aiofiles>=23.0
 anyio~=4.4
+jsonschema>=3.2
 psutil~=6.0
+pycares==4.11.0
 pycryptodome~=3.20
 pyparsing>=3.1,<4.0
+python-dateutil>=2.8.2
+pytz>=2023.3
 requests>=2.32.3
 urllib3>=2.0,<3.0
+xdg>=1.0.0
