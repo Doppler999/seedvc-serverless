@@ -58,7 +58,7 @@ python3 -c "import torch, torchaudio; print('torch', torch.__version__, 'cuda_ok
 
 echo "=== [5/7] api_server.py + worker.py from $RAW ==="
 curl -fsSL "$RAW/api_server.py?v=json2" -o "$WORK/seed-vc/api_server.py" || exit 15
-curl -fsSL "$RAW/worker.py?v=bench3" -o "$WORK/worker.py" || exit 15
+curl -fsSL "$RAW/worker.py?v=bench4" -o "$WORK/worker.py" || exit 15
 grep -q source_audio_b64 "$WORK/seed-vc/api_server.py" || { echo "FATAL: api_server.py from main has no JSON support"; exit 16; }
 wc -l "$WORK/seed-vc/api_server.py" "$WORK/worker.py"
 
