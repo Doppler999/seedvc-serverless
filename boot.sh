@@ -43,6 +43,13 @@ if [ ! -f "$WORK/seed-vc/modules/v2/vc_wrapper.py" ]; then
 fi
 cd "$WORK/seed-vc"
 
+echo "=== [2b/7] prefetch weights in the background (overlaps the pip install) ==="
+curl -fsSL "$RAW/prefetch_weights.py?v=pre1" -o "$WORK/seed-vc/prefetch_weights.py" || exit 15
+python3 -m pip install -q --no-cache-dir "huggingface-hub==0.28.1" || exit 13
+nohup python3 "$WORK/seed-vc/prefetch_weights.py" > "$LOG_DIR/prefetch.log" 2>&1 &
+PREFETCH_PID=$!
+echo "prefetch pid $PREFETCH_PID"
+
 echo "=== [3/7] torch 2.4.0 + torchaudio 2.4.0 (cu121) ==="
 python3 -m pip install -q --no-cache-dir "torch==2.4.0" "torchaudio==2.4.0" \
   --index-url https://download.pytorch.org/whl/cu121 || exit 12
@@ -63,6 +70,13 @@ grep -q source_audio_b64 "$WORK/seed-vc/api_server.py" || { echo "FATAL: api_ser
 wc -l "$WORK/seed-vc/api_server.py" "$WORK/worker.py"
 
 echo "=== [6/7] start model server (weights download on first boot) ==="
+# Wait for the background prefetch so load_models hits a warm cache (~20 s
+# instead of ~2.5 min of downloads inside the autoscaler's load window).
+if kill -0 "$PREFETCH_PID" 2>/dev/null; then
+  echo "waiting for weight prefetch (pid $PREFETCH_PID)..."
+  wait "$PREFETCH_PID" || echo "WARNING: prefetch failed, continuing (api_server will download)"
+fi
+tail -3 "$LOG_DIR/prefetch.log" 2>/dev/null
 cd "$WORK/seed-vc"
 if curl -sf http://127.0.0.1:8080/health > /dev/null 2>&1; then
   # Instance reboot: the model server from the previous boot is still up.
